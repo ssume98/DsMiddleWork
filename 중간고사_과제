@@ -1,0 +1,142 @@
+install.packages("stringr")
+
+install.packages("dplyr")
+
+install.packages("tidytext")
+
+install.packages("ggplot2")
+
+install.packages("showtext")
+
+install.packages("jsonlite")
+
+install.packages("curl")
+
+install.packages("multilinguer")
+
+multilinguer::install_jdk()
+
+install.packages("KoNLP", repos = "https://forkonlp.r-universe.dev",INSTALL-opts = c("--no-multiarch"))
+
+install.packages('rJava', type = 'binary');library(rJava);.jinit();rstudioapi::restartSession()
+
+
+
+install.packages(c("stringr","hash","tau","Sejong","RSQLite","devtools"),type = "binary")
+
+
+
+install.packages("remotes")
+
+remotes::install_github("haven-jeon/KoNLP", upgrade = "never", INSTALL_opts = c("--no-multiarch"))
+
+install.packages("tidyr")
+
+install.packages("readr")
+
+install.packages("textclean")
+
+library(stringr)
+
+library(dplyr)
+
+library(tidytext)
+
+library(ggplot2)
+
+library(curl)
+
+library(jsonlite)
+
+library(showtext)
+
+library(multilinguer)
+
+library(KoNLP)
+
+library(tidyr)
+
+library(readr)
+
+library(textclean)
+
+##inaugural address = 취임문
+
+raw_lee <- readLines("PreLee.txt", encoding = "UTF-8")  ## 이명박 전 대통령의 취임문을 불러옵니다.
+lee <- raw_lee %>% as_tibble() %>% mutate(president = "lee")
+
+raw_roh <- readLines("PreRoh.txt", encoding = "UTF-8")  ## 노무현 전 대통령의 취임문을 불러옵니다.
+roh <- raw_roh %>% as_tibble() %>% mutate(president = "roh")
+
+bind_ia <- bind_rows(lee,roh) %>% select(president,value)  ## 두 텍스트 데이터를 비교하기 위해서 데이터 셋을 bind_rows함수를 사용하여 행방향으로 하여 하나로 합쳐줍니다. 
+
+ia <- bind_ia %>% mutate(value = str_replace_all(value,"[^가-힣]"," "),value = str_squish(value))  ## 합친 취임문을 한글 이외의 문자와 연속된 공백을 지워줍니다. tibble 구조이기 때문에 mutate함수를 사용합니다.
+ia
+
+ia <- ia %>% unnest_tokens(input = value, output = word, token = extractNoun)  ## 토큰화를 시켜줍니다.
+ia
+
+freq <- ia %>% count(president, word) %>% filter(str_count(word)>1)  ## lee와 roh의 두글자 이상 단어의 빈도를 구합니다.
+freq
+
+top10 <- freq %>% group_by(president) %>% slice_max(n, n=10)  ## 각 전 대통령별 많이 사용한 단어의 상위 10개를 추출합니다.
+top10
+
+top10_notie <- freq %>% group_by(president) %>%  slice_max(n, n=10, with_ties = F)  ## 빈도가 같은 단어를 제외하고 추출합니다.
+top10_notie
+
+ggplot(top10_notie, aes(x = reorder_within(word, n, president), y = n, fill = president)) + geom_col() + coord_flip() + facet_wrap(~president, scales = "free_y") + scale_x_reordered() + labs(x = NULL)
+
+freq_wide <- freq %>% pivot_wider(names_from = president, values_from = n, values_fill = list(n=0))  ## pivot_wider 함수를 사용하여 행의 수를 늘리고 열의 수를 줄입니다.
+freq_wide
+
+freq_wide <- freq_wide %>% mutate(ratio_lee = ((lee+1)/(sum(lee+1))), ratio_roh = ((roh+1)/(sum(roh+1))))  ## 각 단어가 취임문에서 차지하는 비중이 얼마나 되는지 오즈비를 써서 계산합니다. 
+freq_wide                                                                                                  ## 빈도가 0일경우 0으로 나오기 때문에 전부 1을 더하여 줍니다.
+
+freq_wide <- freq_wide %>% mutate(odds_ratio = ratio_lee/ratio_roh)  ## 오즈비 변수를 추가하여 점수를 지표로 보여줍니다.
+freq_wide
+
+freq_wide %>% arrange(odds_ratio)  ## 오즈비를 오름차순으로 정렬합니다.
+freq_wide %>% arrange(-odds_ratio) ## 오즈비를 내림차순으로 정렬합니다.
+freq_wide %>% arrange(abs(1-odds_ratio)) ## 오즈비를 1에 가까운 수부터 정렬합니다.
+
+dic <- read_csv("knu_sentiment_lexicon.csv")  ## 군산대학교 감정사전을 불러옵니다.
+
+raw_movie_review <- read_csv("movie1.csv")    ## 감정사전을 활용할 영화 리뷰 데이터셋을 불러옵니다.
+
+movie_review <- raw_movie_review %>% mutate(id = row_number(), document = str_squish(replace_html(document)))  ## tibble 구조이기 때문에 mutate함수를 사용하며 id에 row_number로 고유 번호를 만들어줍니다.
+glimpse(movie_review)  ## 데이터 구조를 확인해줍니다.
+
+word_review <- movie_review %>% unnest_tokens(input = document, output = word, token = "words", drop = F)  ## 각 리뷰들의 단어들을 토큰화 시켜줍니다.
+word_review %>% select(word, document)   ## document항의 단어를 선택하여 추출합니다.
+
+word_review <- word_review %>% left_join(dic, by = "word") %>% mutate(polarity = ifelse(is.na(polarity), 0, polarity))  ## left_join함수를 사용하여 감정사전의 word항목을 리뷰 데이터에 할당해줍니다.
+word_review %>% select(word, polarity)  ## 할당하여 준 단어들을 감정사전의 polarity항목을 불러와 감정점수를 부여합니다.
+
+word_review <- word_review %>% mutate(sentiment = ifelse(polarity == 2, "pos", ifelse(polarity == -2, "neg","neu")))  ## polarity가 2인경우 pos, -2인경우 neg, 그 외에는 neu를 부여합니다.
+word_review %>% count(sentiment)
+
+top10_sentiment <- word_review %>% filter(sentiment != "new") %>% count(sentiment, word) %>% group_by(sentiment) %>% slice_max(n, n=10)  ## 각 상위 10개씩 추출하여줍니다.
+top10_sentiment
+
+score_review <- word_review %>% group_by(id, document) %>% summarise(score = sum(polarity)) %>% ungroup()  ## 각 리뷰별 감정 점수를 계산하여 보여줍니다. 
+score_review %>% select(score, document)
+
+score_review <- score_review %>% mutate(sentiment = ifelse(score >= 1, "pos", ifelse(score <= -1, "neg", "neu")))  ## 각 리뷰별 감정 점수가 1점 이상인경우 pos, 나머지는 neg, neu를 부여합니다.
+score_review %>% count(sentiment) %>% mutate(ratio = n/sum(n)*100)  ## 점수별 비율을 수치화 하여 보여줍니다.
+=============
+score_review %>% filter(str_detect(document,"소름")) %>% select(document)  ## 소름과 미친은 긍정적인 감정을 극적으로 표현한 단어일 확률이 옾기 때문에 조회해줍니다.
+
+score_review %>% filter(str_detect(document, "미친")) %>% select(document)
+
+dic %>% filter(word %in% c("소름", "소름이", "미친"))  ## 감정 사전에서는 모두 음수처리를 하여 부정적으로 처리 되어있습니다.
+new_dic <- dic %>% mutate(polarity = ifelse(word %in% c("소름", "소름이", "미친"), 2, polarity))  ## 소름, 소름이, 미친의 polarity를 +2로 수정하여줍니다.
+new_dic %>% filter(word %in% c("소름","소름이","미친"))
+
+new_word_review <- word_review %>% select(-polarity) %>% left_join(new_dic, by = "word") %>% mutate(polarity = ifelse(is.na(polarity), 0, polarity))  ## polarity를 제외한 모든 단어를 할당해줍니다.
+
+new_score_review <- new_word_review %>% group_by(id, document) %>% summarise(score = sum(polarity)) %>% ungroup()  ## 수정된 각 리뷰별 감정 점수를 계산하여 보여줍니다.
+
+new_score_review <- new_score_review %>% mutate(sentiment = ifelse(score >= 1, "pos", ifelse(score <= -1, "neg", "neu")))  ## 각 리뷰별 감정 점수가 1점 이상인경우 pos, 나머지는 neg, neu를 부여합니다.
+
+new_score_review %>% count(sentiment) %>% mutate(ratio = n/sum(n)*100)  ## 점수별 비율을 수치화 하여 보여줍니다.
